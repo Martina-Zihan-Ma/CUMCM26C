@@ -7,7 +7,9 @@
 from __future__ import annotations
 
 import shutil
+import re
 from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile
 
 import matplotlib
 
@@ -49,14 +51,27 @@ def assert_input(df: pd.DataFrame) -> None:
 
 
 def make_periods(df: pd.DataFrame) -> pd.DataFrame:
-    """按右端点标签建立真正的区间边界：00:10代表[00:00,00:10]。"""
-    result = df.copy()
+    """按模板左端点定义构造00:00--24:00日历日，并将0:00+1循环置首。"""
+    source = df.copy()
+    # 清洗表的0:00+1是次日0:00；在“每天重复”的标准日条件下，它等价于
+    # 代表日00:00--00:10这一时段的参数，必须参与一次且仅参与一次调度。
+    next_day = source["time_label"].astype(str).eq("0:00+1")
+    assert next_day.sum() == 1 and len(source) == N, "必须唯一定位0:00+1并保留144行"
+    result = pd.concat([source.loc[next_day], source.loc[~next_day]], ignore_index=True)
+    result["source_time_index"] = result["time_index"].astype(int)
+    result["calendar_time_index"] = np.arange(N, dtype=int)
+    # 下游一律以日历顺序time_index作图和求解，原始顺序另存为source_time_index。
+    result["time_index"] = result["calendar_time_index"]
     base = pd.Timestamp("2025-01-01")
-    result["period_end"] = base + pd.to_timedelta((result["time_index"] + 1) * 10, unit="min")
-    result["period_start"] = result["period_end"] - pd.Timedelta(minutes=10)
+    result["period_start"] = base + pd.to_timedelta(result["calendar_time_index"] * 10, unit="min")
+    result["period_end"] = result["period_start"] + pd.Timedelta(minutes=10)
     result["period_start_text"] = result["period_start"].dt.strftime("%H:%M")
     result["period_end_text"] = result["period_end"].dt.strftime("%H:%M")
-    result.loc[result["time_index"] == N - 1, "period_end_text"] = "24:00"
+    result.loc[result["calendar_time_index"] == N - 1, "period_end_text"] = "24:00"
+    result["period_start_minute"] = result["calendar_time_index"] * 10
+    result["period_end_minute"] = result["period_start_minute"] + 10
+    result["period_key"] = result["period_start_text"] + "-" + result["period_end_text"]
+    assert result["period_key"].nunique() == N and result["source_time_index"].nunique() == N
     return result
 
 
@@ -123,7 +138,7 @@ def solve_milp(data: pd.DataFrame, fixed_s0: float | None = None) -> tuple[np.nd
 
 
 def schedule_from_solution(data: pd.DataFrame, x: np.ndarray) -> pd.DataFrame:
-    ix = indices(); result = make_periods(data)
+    ix = indices(); result = data.copy() if "period_key" in data.columns else make_periods(data)
     result["grid_purchase_kwh"] = x[ix["g"]]
     result["charge_input_kwh"] = x[ix["c"]]
     result["discharge_output_kwh"] = x[ix["d"]]
@@ -146,7 +161,7 @@ def validate(schedule: pd.DataFrame, stage1_cost: float, final_cost: float, comp
         "charge_discharge_bounds_ok": bool(((schedule[["charge_input_kwh", "discharge_output_kwh"]] <= MAX_INTERVAL_ENERGY + 1e-6).all().all())),
         "simultaneous_charge_discharge_count": int(simultaneous),
         "cycle_soc_residual_kwh": float(abs(schedule["soc_end_kwh"].iloc[-1] - schedule["soc_start_kwh"].iloc[0])),
-        "purchase_sum_residual_kwh": float(abs(schedule["grid_purchase_kwh"].sum() - schedule["grid_purchase_kwh"].sum())),
+        "schedule_purchase_sum_kwh": float(schedule["grid_purchase_kwh"].sum()),
         "cost_sum_residual_yuan": float(abs(schedule["grid_cost_yuan"].sum() - final_cost)),
         "second_stage_cost_gap_yuan": float(final_cost - stage1_cost),
         "fixed_6000_cost_difference_yuan": float(comparison_cost - final_cost),
@@ -154,10 +169,16 @@ def validate(schedule: pd.DataFrame, stage1_cost: float, final_cost: float, comp
 
 
 def four_hour_summary(schedule: pd.DataFrame) -> pd.DataFrame:
+    """严格按日历分钟边界汇总，每组必须正好包含24个时段。"""
     rows = []
-    for start in range(0, N, 24):
-        part = schedule.iloc[start:start + 24]
-        rows.append({"time_block": f"{start // 6:02d}:00–{(start // 6 + 4):02d}:00", "charge_kwh": part["charge_input_kwh"].sum(), "discharge_kwh": part["discharge_output_kwh"].sum()})
+    used: set[str] = set()
+    for start_minute in range(0, 1440, 240):
+        end_minute = start_minute + 240
+        part = schedule.loc[(schedule["period_start_minute"] >= start_minute) & (schedule["period_start_minute"] < end_minute)]
+        assert len(part) == 24, f"{start_minute // 60:02d}:00时段数不为24"
+        used.update(part["period_key"])
+        rows.append({"time_block": f"{start_minute // 60:02d}:00–{end_minute // 60:02d}:00", "charge_kwh": part["charge_input_kwh"].sum(), "discharge_kwh": part["discharge_output_kwh"].sum()})
+    assert len(used) == N and used == set(schedule["period_key"]), "四小时汇总存在遗漏或重复"
     return pd.DataFrame(rows)
 
 
@@ -175,12 +196,12 @@ def set_chinese_font() -> None:
 
 def draw_figures(schedule: pd.DataFrame) -> None:
     set_chinese_font(); FIG.mkdir(parents=True, exist_ok=True)
-    hour = (schedule["time_index"] + 1) / 6
+    hour = schedule["period_end_minute"] / 60
     fig, ax = plt.subplots(figsize=(13, 6))
     ax.plot(hour, schedule["load_kw"], label="小区负载", lw=1.8)
     ax.plot(hour, schedule["pv_forecast_kw"], label="光伏预测功率", lw=1.8)
     ax.plot(hour, schedule["grid_purchase_kwh"] * 6, label="计划购电功率（等效）", lw=1.6)
-    ax.set(xlabel="时刻 / h（右端点）", ylabel="功率 / kW", title="问题一：标准日负载、光伏与计划购电")
+    ax.set(xlabel="日历时刻 / h", ylabel="功率 / kW", title="问题一：标准日负载、光伏与计划购电")
     ax.set_xlim(0, 24); ax.grid(alpha=.25); ax.legend(ncol=3); fig.tight_layout()
     fig.savefig(FIG / "question1_dispatch.png", dpi=300); plt.close(fig)
     fig, ax = plt.subplots(figsize=(13, 5))
@@ -192,38 +213,82 @@ def draw_figures(schedule: pd.DataFrame) -> None:
     fig.savefig(FIG / "question1_soc.png", dpi=300); plt.close(fig)
 
 
-def fill_template(schedule: pd.DataFrame, blocks: pd.DataFrame) -> list[str]:
-    """复制官方模板，仅写入规定数值单元格，保留其格式、工作表和结构。"""
+def template_period_key(label: str) -> str:
+    """将模板的跨日写法规范到代表日日历键，如0:00+1-0:10+1→00:00-00:10。"""
+    start, end = str(label).split("-")
+    def clock(text: str) -> str:
+        text = text.replace("+1", "")
+        hour, minute = text.split(":")
+        return f"{int(hour):02d}:{int(minute):02d}"
+    start_key, end_key = clock(start), clock(end)
+    if "+1" in end and end_key == "00:00":
+        end_key = "24:00"
+    return f"{start_key}-{end_key}"
+
+
+def fill_template(schedule: pd.DataFrame, blocks: pd.DataFrame) -> tuple[list[str], dict[str, float]]:
+    """复制官方模板并仅改目标单元格，保留其余 Office XML 组件。"""
     if not TEMPLATE.exists(): raise FileNotFoundError(f"未找到附件5模板：{TEMPLATE}")
     OUT.mkdir(parents=True, exist_ok=True); shutil.copy2(TEMPLATE, COMPLETED_TEMPLATE); shutil.copy2(TEMPLATE, OUT / "result1.xlsx")
     expected_sheets = ["计划购电量", "充放电量"]
+    schedule_by_key = schedule.set_index("period_key")
+    assert schedule_by_key.index.is_unique and len(schedule_by_key) == N
+    excel_metrics: dict[str, float] = {}
     for output in [COMPLETED_TEMPLATE, OUT / "result1.xlsx"]:
-        wb = load_workbook(output)
+        # 首先用openpyxl验证模板工作表/结构；随后以XML最小替换写值。
+        # 后者避免openpyxl保存时剔除共享字符串、打印设置等模板内部组件。
+        wb = load_workbook(output, read_only=True)
         if wb.sheetnames != expected_sheets: raise ValueError("输出模板工作表名称或顺序发生改变")
         ws = wb["计划购电量"]
         if ws.max_row != 145 or ws.max_column != 2: raise ValueError("计划购电量模板行列结构不符合预期")
-        for i, value in enumerate(schedule["grid_purchase_kwh"], start=2): ws.cell(i, 2).value = float(value)
-        cs = wb["充放电量"]
+        with ZipFile(output, "r") as source:
+            content = {name: source.read(name) for name in source.namelist()}
+        sheet1 = content["xl/worksheets/sheet1.xml"].decode("utf-8")
+        template_keys: list[str] = []
+        for row in range(2, 146):
+            key = template_period_key(ws.cell(row, 1).value)
+            if key not in schedule_by_key.index: raise ValueError(f"模板时段{ws.cell(row, 1).value}不能映射到日历解")
+            template_keys.append(key)
+            value = schedule_by_key.loc[key, "grid_purchase_kwh"]
+            cell = f'B{row}'; replacement = f'<c r="{cell}" s="2"><v>{float(value):.12g}</v></c>'
+            sheet1, n = re.subn(rf'<c r="{cell}" s="2"\s*/>', replacement, sheet1, count=1)
+            if n != 1: raise ValueError(f"模板中未找到{cell}的空白购电量单元格")
+        assert len(template_keys) == N and len(set(template_keys)) == N and set(template_keys) == set(schedule_by_key.index), "模板144行时间映射不完整"
+        sheet2 = content["xl/worksheets/sheet2.xml"].decode("utf-8")
+        values = {}
         for i, row in blocks.iterrows():
-            cs.cell(i + 2, 2).value = float(row["charge_kwh"]); cs.cell(i + 2, 3).value = float(row["discharge_kwh"])
-        cs.cell(2, 5).value = float(schedule["soc_start_kwh"].iloc[0]); cs.cell(3, 5).value = float(schedule["soc_end_kwh"].iloc[-1])
-        wb.save(output)
+            values[f"B{i + 2}"] = row["charge_kwh"]; values[f"C{i + 2}"] = row["discharge_kwh"]
+        values["E2"] = schedule["soc_start_kwh"].iloc[0]; values["E3"] = schedule["soc_end_kwh"].iloc[-1]
+        for row in range(2, 8):
+            additions = "".join(f'<c r="{cell}" s="5"><v>{float(value):.12g}</v></c>' for cell, value in values.items() if cell[1:] == str(row))
+            sheet2, n = re.subn(rf'(<row r="{row}"[^>]*>.*?)(</row>)', rf'\1{additions}\2', sheet2, count=1, flags=re.DOTALL)
+            if n != 1: raise ValueError(f"模板中未找到充放电表第{row}行")
+        content["xl/worksheets/sheet1.xml"] = sheet1.encode("utf-8")
+        content["xl/worksheets/sheet2.xml"] = sheet2.encode("utf-8")
+        with ZipFile(output, "w", ZIP_DEFLATED) as target:
+            for name, binary in content.items(): target.writestr(name, binary)
     # 重开验证所有目标位置，保证写入成功且逐行数值一致。
     wb = load_workbook(COMPLETED_TEMPLATE, data_only=True)
     purchase = np.array([wb["计划购电量"].cell(i, 2).value for i in range(2, 146)], dtype=float)
-    assert np.allclose(purchase, schedule["grid_purchase_kwh"], atol=1e-8), "模板购电量逐行核验失败"
+    expected_purchase = np.array([schedule_by_key.loc[template_period_key(wb["计划购电量"].cell(i, 1).value), "grid_purchase_kwh"] for i in range(2, 146)], dtype=float)
+    assert np.allclose(purchase, expected_purchase, atol=1e-8), "模板购电量按时间键核验失败"
     charge = np.array([wb["充放电量"].cell(i, 2).value for i in range(2, 8)], dtype=float)
     discharge = np.array([wb["充放电量"].cell(i, 3).value for i in range(2, 8)], dtype=float)
     assert np.allclose(charge, blocks["charge_kwh"], atol=1e-8), "模板累计充电量核验失败"
     assert np.allclose(discharge, blocks["discharge_kwh"], atol=1e-8), "模板累计放电量核验失败"
     assert abs(wb["充放电量"].cell(2, 5).value - schedule["soc_start_kwh"].iloc[0]) < 1e-8, "模板0:00储电量核验失败"
     assert abs(wb["充放电量"].cell(3, 5).value - schedule["soc_end_kwh"].iloc[-1]) < 1e-8, "模板24:00储电量核验失败"
-    return [str(COMPLETED_TEMPLATE.relative_to(ROOT)), str((OUT / "result1.xlsx").relative_to(ROOT))]
+    excel_metrics["excel_purchase_sum_kwh"] = float(purchase.sum())
+    excel_metrics["excel_vs_schedule_purchase_residual_kwh"] = float(abs(purchase.sum() - schedule["grid_purchase_kwh"].sum()))
+    for key in ["10:00-10:10", "12:00-12:10", "14:00-14:10", "16:00-16:10", "18:00-18:10", "20:00-20:10"]:
+        template_row = next(i for i in range(2, 146) if template_period_key(wb["计划购电量"].cell(i, 1).value) == key)
+        excel_metrics[f"excel_{key}_residual_kwh"] = float(abs(wb["计划购电量"].cell(template_row, 2).value - schedule_by_key.loc[key, "grid_purchase_kwh"]))
+    return [str(COMPLETED_TEMPLATE.relative_to(ROOT)), str((OUT / "result1.xlsx").relative_to(ROOT))], excel_metrics
 
 
 def write_report(schedule: pd.DataFrame, blocks: pd.DataFrame, validation: dict, stage1: float, final: float, fixed_cost: float, solver_message: str) -> None:
-    # 标签格式可能是10:10或10:10:00；按已验证的右端点time_index提取避免格式歧义。
-    specified = schedule.iloc[[60, 72, 84, 96, 108, 120]]
+    specified_keys = ["10:00-10:10", "12:00-12:10", "14:00-14:10", "16:00-16:10", "18:00-18:10", "20:00-20:10"]
+    specified = schedule.set_index("period_key").loc[specified_keys]
     table1 = "\n".join(f"| {row.period_start_text}–{row.period_end_text} | {row.grid_purchase_kwh:.3f} |" for _, row in specified.iterrows())
     table2 = "\n".join(f"| {r.time_block} | {r.charge_kwh:.3f} | {r.discharge_kwh:.3f} |" for _, r in blocks.iterrows())
     REPORT.parent.mkdir(parents=True, exist_ok=True)
@@ -235,7 +300,7 @@ def write_report(schedule: pd.DataFrame, blocks: pd.DataFrame, validation: dict,
 
 ## 2. 数据与假设
 
-使用`attachment1_standard_day.csv`的144条记录。原始宽表已转为长表，功率按$E=P/6$转换为10分钟区间电量；本模型直接使用既有`load_kwh`、`pv_forecast_kwh`，不重复换算。时间标签采用右端点：`10:10:00`代表10:00–10:10。
+使用`attachment1_standard_day.csv`的144条记录。原始宽表已转为长表，功率按$E=P/6$转换为10分钟区间电量；本模型直接使用既有`load_kwh`、`pv_forecast_kwh`，不重复换算。附件时间标签按照官方模板解释为区间左端点；为形成00:00–24:00日历日，将`0:00+1`循环移动到最前面并规范化为00:00–00:10。
 
 假设外部电网可按电价无限购电、不能售电；多余光伏只能弃光。充电和放电的单程效率均取0.9；充电量$C_t$为输入储能设备侧的电量，放电量$D_t$为储能设备输出至微网的电量。初始储电量$S_0$未被题意指定，因此作为[1200,10800] kWh内的决策变量，并以$S_{{144}}=S_0$实现循环运行。
 
@@ -284,17 +349,32 @@ $$S_{{144}}=S_0,\quad G_t,W_t\ge0,\quad z_t\in\{{0,1\}}.$$
 
 ## 5. 验证与结论
 
-最大时段电量平衡残差为{validation['max_energy_balance_residual_kwh']:.3e} kWh，最大SOC转移残差为{validation['max_soc_transition_residual_kwh']:.3e} kWh；循环SOC残差为{validation['cycle_soc_residual_kwh']:.3e} kWh；六个分段充、放电汇总残差均为0。不存在同时充放电时段，充放电上限、SOC边界、购电费用和Excel写入均逐项复核通过。完整逐时计划见`outputs/question1/question1_full_schedule.csv`。
+最大时段电量平衡残差为{validation['max_energy_balance_residual_kwh']:.3e} kWh，最大SOC转移残差为{validation['max_soc_transition_residual_kwh']:.3e} kWh；循环SOC残差为{validation['cycle_soc_residual_kwh']:.3e} kWh；Excel与CSV全天购电量残差为{validation['excel_vs_schedule_purchase_residual_kwh']:.3e} kWh。六个分段充、放电汇总均覆盖24个时段且无遗漏，不存在同时充放电时段，充放电上限、SOC边界、购电费用和Excel写入均逐项复核通过。完整逐时计划见`outputs/question1/question1_full_schedule.csv`。
 
 模型是透明可复核的MILP，能严格表达功率/能量、效率和循环储能约束。局限在于光伏预测、电价和负荷被视为确定值，且未建模储能衰减、需量电费及外网售电；这些可在后续问题的滚动优化中扩展。
 
-**模板提示：**附件5模板“计划购电量”首行文本为`0:10-0:20`，但题意明确`00:10`是00:00–00:10的右端点，二者整体相差10分钟。为不改变模板任一文本、布局或顺序，程序按144行既有顺序写入右端点序列；提交前应向赛方确认该模板时段文字是否为排版错误。
+模板填表按时间段键匹配：模板`00:10–00:20`取日历解同名时段；模板最后一行`0:00+1–0:10+1`取代表日循环策略的`00:00–00:10`。原模板的工作表名称、顺序、表头、格式和布局均未修改。
 ''', encoding="utf-8")
+
+
+def assert_report_consistency(schedule: pd.DataFrame, blocks: pd.DataFrame, final_cost: float) -> None:
+    """报告由真实结果表渲染后再回读，核验指定时段、汇总和费用未发生偏差。"""
+    text = REPORT.read_text(encoding="utf-8")
+    for key in ["10:00-10:10", "12:00-12:10", "14:00-14:10", "16:00-16:10", "18:00-18:10", "20:00-20:10"]:
+        row = schedule.loc[schedule["period_key"] == key]
+        assert len(row) == 1
+        value = row["grid_purchase_kwh"].iloc[0]
+        assert f"| {key.replace('-', '–')} | {value:.3f} |" in text, f"报告缺少或错误写入{key}"
+    assert f"| 全天 | {schedule['grid_purchase_kwh'].sum():.3f} |" in text
+    assert f"| 全天购电费 / 元 | {final_cost:.3f} |" in text
+    for _, row in blocks.iterrows():
+        assert f"| {row.time_block} | {row.charge_kwh:.3f} | {row.discharge_kwh:.3f} |" in text
 
 
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True); FIG.mkdir(parents=True, exist_ok=True)
-    data = pd.read_csv(INPUT); assert_input(data)
+    raw_data = pd.read_csv(INPUT); assert_input(raw_data)
+    data = make_periods(raw_data)
     x, stage1_cost, final_cost, message = solve_milp(data)
     schedule = schedule_from_solution(data, x)
     x_fixed, _, fixed_cost, _ = solve_milp(data, fixed_s0=6000.0)
@@ -310,12 +390,16 @@ def main() -> None:
     assert validation["four_hour_charge_sum_residual_kwh"] < 1e-6
     assert validation["four_hour_discharge_sum_residual_kwh"] < 1e-6
     schedule.to_csv(OUT / "question1_full_schedule.csv", index=False, encoding="utf-8-sig")
+    draw_figures(schedule)
+    template_paths, excel_metrics = fill_template(schedule, blocks)
+    validation.update(excel_metrics)
+    assert validation["excel_vs_schedule_purchase_residual_kwh"] < 1e-6
+    assert all(v < 1e-6 for k, v in validation.items() if k.startswith("excel_") and k.endswith("_residual_kwh"))
     summary = pd.DataFrame([{"solver": "scipy.optimize.milp / HiGHS", "stage1_min_cost_yuan": stage1_cost, "final_cost_yuan": final_cost, "total_grid_purchase_kwh": schedule.grid_purchase_kwh.sum(), "s0_kwh": schedule.soc_start_kwh.iloc[0], "s144_kwh": schedule.soc_end_kwh.iloc[-1], "fixed_s0_6000_cost_yuan": fixed_cost, **validation}])
     summary.to_csv(OUT / "question1_summary.csv", index=False, encoding="utf-8-sig")
     (OUT / "question1_validation.txt").write_text("\n".join(f"{k}: {v}" for k,v in validation.items()) + "\n", encoding="utf-8")
-    draw_figures(schedule)
-    template_paths = fill_template(schedule, blocks)
     write_report(schedule, blocks, validation, stage1_cost, final_cost, fixed_cost, message)
+    assert_report_consistency(schedule, blocks, final_cost)
     print(f"求解成功：最低购电费={final_cost:.6f} 元；全天购电量={schedule.grid_purchase_kwh.sum():.6f} kWh")
     print(f"S0=S144={schedule.soc_start_kwh.iloc[0]:.6f} kWh；最大能量平衡残差={validation['max_energy_balance_residual_kwh']:.3e} kWh")
     print("模板输出：" + "，".join(template_paths))
