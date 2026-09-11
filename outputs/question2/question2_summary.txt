@@ -1,0 +1,38 @@
+Q2 FINAL SUMMARY
+================
+Safety scenario quantile:       0.80
+Day-ahead decision:             planned grid purchase
+Real-time battery control:      causal surplus-charge / deficit-discharge
+Terminal reserve:               none
+
+Final strategy
+--------------
+Total purchase cost:           14,010,636.86 yuan
+Planned purchase cost:         12,864,930.96 yuan
+Emergency purchase cost:       1,145,705.90 yuan
+Emergency purchase energy:     197,133.32 kWh
+Emergency days:                158 / 334
+Emergency intervals:           1408
+Spill energy:                  1,884,406.68 kWh
+
+No-storage baseline
+-------------------
+Total purchase cost:           18,940,040.16 yuan
+Emergency purchase cost:       2,554,965.66 yuan
+
+Economic improvement
+--------------------
+Cost saving:                   4,929,403.30 yuan
+Cost saving rate:              26.03%
+
+Battery / feasibility
+---------------------
+Jan-1 initial SOC:             6,000.00 kWh
+Feb-1 initial SOC:             1,851.84 kWh
+Terminal SOC range:            1,200.00 to 5,533.96 kWh
+SOC continuity error:          0.000e+00 kWh
+Balance error:                 2.274e-13 kWh
+
+Output workbook
+---------------
+/Users/chenyufei/Desktop/Yufei Chen/MATH/CUMCM2/CUMCM26C/results/result2.xlsx
