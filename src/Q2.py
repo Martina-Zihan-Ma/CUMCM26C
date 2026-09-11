@@ -689,26 +689,27 @@ def summarize_strategy(daily: pd.DataFrame) -> dict:
 # Official workbook for the final strategy
 # ----------------------------------------------------------------------
 
-def _format_template_time(total_minutes: int) -> str:
-    """Format a boundary exactly as used by the official result2 template."""
-    day_offset, minute = divmod(int(total_minutes), 24 * 60)
-    hour, minute = divmod(minute, 60)
-    label = f"{hour}:{minute:02d}"
-    if day_offset > 0:
-        label += f"+{day_offset}"
-    return label
+def _format_natural_time(total_minutes: int) -> str:
+    """Format a natural-day boundary in [0:00, 24:00]."""
+    total_minutes = int(total_minutes)
+    if total_minutes == 24 * 60:
+        return "24:00"
+    hour, minute = divmod(total_minutes, 60)
+    return f"{hour}:{minute:02d}"
 
 
 def compress_emergency(emergency: pd.DataFrame) -> pd.DataFrame:
     """
-    Merge consecutive 10-minute emergency-purchase slots.
+    Merge consecutive non-zero 10-minute emergency-purchase slots.
 
-    IMPORTANT: follow the OFFICIAL result2_template.xlsx time convention.
-    Sheet 1 maps:
-        time_index 0   -> 0:10-0:20
+    INTERNAL TIME CONVENTION (used everywhere in the model):
+        time_index 0   -> 0:00-0:10
+        time_index 1   -> 0:10-0:20
         ...
-        time_index 143 -> 0:00-0:10+1
-    Therefore Sheet 3 must use the same convention.
+        time_index 143 -> 23:50-24:00
+
+    A continuous run of emergency slots is written as ONE period and its
+    emergency energy is summed. A zero-emergency slot breaks the period.
     """
     rows = []
     active = emergency.loc[emergency["emergency_purchase_kwh"] > 1e-8].copy()
@@ -730,18 +731,16 @@ def compress_emergency(emergency: pd.DataFrame) -> pd.DataFrame:
 
             a = idx[start]
             last = idx[j - 1]
-
-            # Exact mapping from the official template headers.
-            start_min = (a + 1) * 10
-            end_min = (last + 2) * 10
+            start_min = a * 10
+            end_min = (last + 1) * 10
 
             rows.append({
                 "date": pd.Timestamp(date).normalize(),
                 "start_index": int(a),
                 "end_index": int(last),
                 "period": (
-                    f"{_format_template_time(start_min)}-"
-                    f"{_format_template_time(end_min)}"
+                    f"{_format_natural_time(start_min)}-"
+                    f"{_format_natural_time(end_min)}"
                 ),
                 "emergency_kwh": float(values[start:j].sum()),
             })
@@ -751,27 +750,18 @@ def compress_emergency(emergency: pd.DataFrame) -> pd.DataFrame:
 
 
 def find_template() -> Path:
-    """Locate the official blank result2 workbook."""
-    candidates = [
-        ROOT / "results" / "result2_template.xlsx",
-        ROOT / "results" / "result2_template(1).xlsx",
-        ROOT / "results" / "result2.xlsx",
-        ROOT / "result2_template.xlsx",
-        ROOT / "result2_template(1).xlsx",
-        ROOT / "result2.xlsx",
-    ]
-    for path in candidates:
-        if path.exists():
-            return path
-
-    raise FileNotFoundError(
-        "Cannot find the official result2 template. "
-        "Put result2_template.xlsx under the project results/ folder."
-    )
+    """The official blank Q2 workbook is fixed at results/result2_template.xlsx."""
+    path = ROOT / "results" / "result2_template.xlsx"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Cannot find official template: {path}. "
+            "Keep result2_template.xlsx in the results/ folder next to src/."
+        )
+    return path
 
 
 def _capture_row_template(ws, row: int, max_col: int) -> dict:
-    """Capture style/height from one template row before rows are rebuilt."""
+    """Capture style/height from one template row before rebuilding compact sheets."""
     cells = []
     for col in range(1, max_col + 1):
         c = ws.cell(row, col)
@@ -786,7 +776,7 @@ def _capture_row_template(ws, row: int, max_col: int) -> dict:
 
 
 def _apply_row_template(ws, row: int, template: dict) -> None:
-    """Apply a previously captured template row style to a newly created row."""
+    """Apply a captured template style to a newly created row."""
     for col, style_info in enumerate(template["cells"], start=1):
         c = ws.cell(row, col)
         c._style = copy(style_info["style"])
@@ -801,6 +791,12 @@ def _validate_plan_sheet_dates(ws, dates: list[pd.Timestamp]) -> None:
             "计划购电量 template shape changed; expected 335 rows x 147 columns."
         )
 
+    # The official template deliberately displays the 0:00-0:10 slot last.
+    if ws.cell(1, 2).value != "0:10-0:20":
+        raise ValueError("Unexpected first interval header in 计划购电量 template.")
+    if ws.cell(1, 145).value != "0:00-0:10+1":
+        raise ValueError("Unexpected last interval header in 计划购电量 template.")
+
     for r, date in enumerate(dates, start=2):
         template_date = pd.Timestamp(ws.cell(r, 1).value).normalize()
         if template_date != date.normalize():
@@ -810,49 +806,6 @@ def _validate_plan_sheet_dates(ws, dates: list[pd.Timestamp]) -> None:
             )
 
 
-def _write_emergency_sample(
-    ws,
-    compressed: pd.DataFrame,
-    date: pd.Timestamp,
-    rows: list[int],
-) -> None:
-    """Fill only the rows reserved by the official Sheet 3 template."""
-    group = (
-        compressed.loc[compressed["date"] == date]
-        .sort_values("start_index")
-        .reset_index(drop=True)
-    )
-
-    # Keep column A / borders / merged-looking layout untouched.
-    for r in rows:
-        ws.cell(r, 2).value = None
-        ws.cell(r, 3).value = None
-
-    if group.empty:
-        ws.cell(rows[0], 2).value = "无"
-        ws.cell(rows[0], 3).value = 0.0
-        return
-
-    capacity = len(rows)
-    if len(group) <= capacity:
-        for j, rec in group.iterrows():
-            ws.cell(rows[j], 2).value = str(rec["period"])
-            ws.cell(rows[j], 3).value = float(rec["emergency_kwh"])
-        return
-
-    # If a sample date has more periods than the fixed template can display,
-    # keep the first rows and combine the remaining non-contiguous periods in
-    # the last reserved row without losing any emergency energy.
-    for j in range(capacity - 1):
-        rec = group.iloc[j]
-        ws.cell(rows[j], 2).value = str(rec["period"])
-        ws.cell(rows[j], 3).value = float(rec["emergency_kwh"])
-
-    rest = group.iloc[capacity - 1:]
-    ws.cell(rows[-1], 2).value = "；".join(rest["period"].astype(str))
-    ws.cell(rows[-1], 3).value = float(rest["emergency_kwh"].sum())
-
-
 def write_result2(
     plan: pd.DataFrame,
     dispatch: pd.DataFrame,
@@ -860,14 +813,22 @@ def write_result2(
     dates: list[pd.Timestamp],
 ) -> Path:
     """
-    Fill result2_template.xlsx STRICTLY IN PLACE.
+    Fill the official result2_template.xlsx and save results/result2.xlsx.
 
-    The official workbook structure is preserved exactly:
-      Sheet 1: all 334 Feb-Dec dates already exist and are filled.
-      Sheet 2: only the template sample blocks 2025-02-01, 2025-02-02,
-               ellipsis, and 2025-12-31 are filled; no rows are inserted/deleted.
-      Sheet 3: only the template sample rows 2025-02-01, 2025-02-02,
-               ellipsis, and 2025-12-31 are filled; no rows are inserted/deleted.
+    Time convention inside the model:
+        index 0 = 0:00-0:10, ..., index 143 = 23:50-24:00.
+
+    Sheet 1 is a DISPLAY exception in the official template: its first interval
+    column is 0:10-0:20 and its final interval column is 0:00-0:10+1. Therefore
+    each day's 144 planned-purchase values are written in the cyclic order
+        index 1, 2, ..., 143, 0.
+    This is only an Excel-layout rotation; no model data or price index is shifted.
+
+    Sheet 2 and Sheet 3 contain an ellipsis in the blank template as an example
+    of omitted middle rows. The completed result expands those rows:
+      - Sheet 2: all 334 dates, six 4-hour blocks per date;
+      - Sheet 3: every NON-ZERO emergency period from Feb 1 to Dec 31.
+        Consecutive 10-minute emergency slots are merged and their kWh summed.
     """
     template = find_template()
     wb = load_workbook(template)
@@ -886,7 +847,6 @@ def write_result2(
 
     # ==============================================================
     # Sheet 1 — 计划购电量
-    # Official template: 334 date rows, 144 interval columns + totals.
     # ==============================================================
     ws = wb["计划购电量"]
     _validate_plan_sheet_dates(ws, normalized_dates)
@@ -897,69 +857,103 @@ def write_result2(
             raise ValueError(f"{date.date()}: final plan does not have 144 slots.")
 
         values = day["grid_purchase_kwh"].to_numpy(float)
-        for t, value in enumerate(values):
+
+        # IMPORTANT: model index 0 is 0:00-0:10, but the official Sheet 1
+        # displays that slot in its LAST interval column.
+        display_values = np.concatenate([values[1:], values[:1]])
+        for t, value in enumerate(display_values):
             ws.cell(r, 2 + t).value = float(value)
 
+        # Totals/costs stay in the model's natural time order.
         ws.cell(r, 146).value = float(values.sum())
         ws.cell(r, 147).value = float(day["grid_cost_yuan"].sum())
 
     # ==============================================================
     # Sheet 2 — 充放电量
-    # Preserve the official compact sample layout exactly.
-    # Rows 2-7: Feb 1; rows 8-13: Feb 2; row 14: ellipsis;
-    # rows 15-20: Dec 31.
+    # The ellipsis in the template means all middle dates are omitted
+    # only for display. Expand to all 334 dates.
     # ==============================================================
     ws = wb["充放电量"]
-    if ws.max_column != 6 or ws.max_row < 20:
+    if ws.max_column != 6 or ws.max_row < 7:
         raise ValueError("Unexpected 充放电量 template structure.")
 
-    sample_blocks = {
-        pd.Timestamp("2025-02-01"): list(range(2, 8)),
-        pd.Timestamp("2025-02-02"): list(range(8, 14)),
-        pd.Timestamp("2025-12-31"): list(range(15, 21)),
-    }
+    block_templates = [
+        _capture_row_template(ws, row, 6) for row in range(2, 8)
+    ]
 
-    for date, rows in sample_blocks.items():
+    if ws.max_row > 1:
+        ws.delete_rows(2, ws.max_row - 1)
+
+    periods = [
+        "0:00-4:00",
+        "4:00-8:00",
+        "8:00-12:00",
+        "12:00-16:00",
+        "16:00-20:00",
+        "20:00-24:00",
+    ]
+
+    out_row = 2
+    for date in normalized_dates:
         day = dispatch.loc[dispatch["date"] == date].sort_values("time_index")
         if len(day) != N:
             raise ValueError(f"{date.date()}: dispatch does not have 144 slots.")
 
-        for block, r in enumerate(rows):
+        for block in range(6):
+            r = out_row + block
+            _apply_row_template(ws, r, block_templates[block])
             part = day.iloc[24 * block: 24 * (block + 1)]
 
-            # A/B/E are supplied by the official template; fill only results.
+            ws.cell(r, 1).value = date.to_pydatetime() if block == 0 else None
+            ws.cell(r, 2).value = periods[block]
             ws.cell(r, 3).value = float(part["charge_kwh"].sum())
             ws.cell(r, 4).value = float(part["discharge_kwh"].sum())
 
-            # Clear F first, then fill only the two SOC cells reserved by template.
-            ws.cell(r, 6).value = None
+            # Follow the original template layout: 0:00 and 24:00 SOC are
+            # shown in the first two rows of each six-row date block.
             if block == 0:
+                ws.cell(r, 5).value = "0:00"
                 ws.cell(r, 6).value = float(day["soc_start_kwh"].iloc[0])
             elif block == 1:
+                ws.cell(r, 5).value = "24:00"
                 ws.cell(r, 6).value = float(day["soc_end_kwh"].iloc[-1])
+            else:
+                ws.cell(r, 5).value = None
+                ws.cell(r, 6).value = None
+
+        out_row += 6
 
     # ==============================================================
     # Sheet 3 — 紧急购电量
-    # Preserve the official compact sample layout exactly.
-    # Rows 2-4: Feb 1; rows 5-7: Feb 2; row 8: ellipsis;
-    # rows 9-11: Dec 31.
+    # The ellipsis means all omitted emergency records must be filled.
+    # Write ONLY non-zero emergency periods, as in Table 4 of the problem.
+    # Consecutive 10-minute slots are merged into one row.
     # ==============================================================
     ws = wb["紧急购电量"]
-    if ws.max_column != 3 or ws.max_row < 11:
+    if ws.max_column != 3 or ws.max_row < 2:
         raise ValueError("Unexpected 紧急购电量 template structure.")
 
-    compressed = compress_emergency(emergency)
-    _write_emergency_sample(
-        ws, compressed, pd.Timestamp("2025-02-01"), [2, 3, 4]
-    )
-    _write_emergency_sample(
-        ws, compressed, pd.Timestamp("2025-02-02"), [5, 6, 7]
-    )
-    _write_emergency_sample(
-        ws, compressed, pd.Timestamp("2025-12-31"), [9, 10, 11]
-    )
+    row_template = _capture_row_template(ws, 2, 3)
+    if ws.max_row > 1:
+        ws.delete_rows(2, ws.max_row - 1)
 
-    output = OUT / "result2_final.xlsx"
+    compressed = compress_emergency(emergency)
+    out_row = 2
+
+    if not compressed.empty:
+        for date, group in compressed.groupby("date", sort=True):
+            group = group.sort_values("start_index").reset_index(drop=True)
+            for j, rec in group.iterrows():
+                _apply_row_template(ws, out_row, row_template)
+                ws.cell(out_row, 1).value = (
+                    pd.Timestamp(date).to_pydatetime() if j == 0 else None
+                )
+                ws.cell(out_row, 2).value = str(rec["period"])
+                ws.cell(out_row, 3).value = float(rec["emergency_kwh"])
+                out_row += 1
+
+    # Formal submission file required by the problem.
+    output = ROOT / "results" / "result2.xlsx"
     wb.save(output)
     return output
 
