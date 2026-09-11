@@ -1,0 +1,36 @@
+﻿analysis,variable,lag_steps,lag_days,value,detail,rank,period_hours,std,n_pairs
+acf_all,Load,144.0,1.0,0.6587188823755109,95% CI approx ±0.0293,,,,
+acf_all,Load,288.0,2.0,0.36344915787582077,95% CI approx ±0.0293,,,,
+acf_all,Load,1008.0,7.0,0.7681944992653832,95% CI approx ±0.0293,,,,
+periodogram,Load,,,4902763955.515249,linear detrend,1.0,24.0,,
+periodogram,Load,,,969695031.9333673,linear detrend,2.0,186.0,,
+periodogram,Load,,,920927022.2159905,linear detrend,3.0,82.66666666666667,,
+periodogram,Load,,,669509450.6145809,linear detrend,4.0,148.8,,
+periodogram,Load,,,326103454.99613947,linear detrend,5.0,33.81818181818182,,
+adjacent_day_correlation,Load,,,0.9428343296873277,daily 144-point Pearson correlation,,,0.06599669414685891,30.0
+seven_day_correlation,Load,,,0.9822464101406236,daily 144-point Pearson correlation,,,0.014326931923666937,24.0
+acf_all,PV,144.0,1.0,0.9629039391624208,95% CI approx ±0.0293,,,,
+acf_all,PV,288.0,2.0,0.9297900513834193,95% CI approx ±0.0293,,,,
+acf_all,PV,1008.0,7.0,0.764515796692934,95% CI approx ±0.0293,,,,
+periodogram,PV,,,16252118966.331327,linear detrend,1.0,24.0,,
+periodogram,PV,,,5494603671.110047,linear detrend,2.0,12.0,,
+periodogram,PV,,,475024261.8806702,linear detrend,3.0,8.0,,
+periodogram,PV,,,68094365.21233998,linear detrend,4.0,4.8,,
+periodogram,PV,,,35358433.87628662,linear detrend,5.0,6.0,,
+adjacent_day_correlation,PV,,,0.9971738231848631,daily 144-point Pearson correlation,,,0.001512504710946133,30.0
+seven_day_correlation,PV,,,0.9968691173656449,daily 144-point Pearson correlation,,,0.0015897541915493674,24.0
+acf_all,NetLoad,144.0,1.0,0.7312831692527344,95% CI approx ±0.0293,,,,
+acf_all,NetLoad,288.0,2.0,0.5281277959681157,95% CI approx ±0.0293,,,,
+acf_all,NetLoad,1008.0,7.0,0.7572827888758452,95% CI approx ±0.0293,,,,
+periodogram,NetLoad,,,4980592648.604241,linear detrend,1.0,12.0,,
+periodogram,NetLoad,,,3315846341.5109687,linear detrend,2.0,24.0,,
+periodogram,NetLoad,,,981025648.6487161,linear detrend,3.0,82.66666666666667,,
+periodogram,NetLoad,,,940034921.598135,linear detrend,4.0,186.0,,
+periodogram,NetLoad,,,904522150.6990744,linear detrend,5.0,8.0,,
+adjacent_day_correlation,NetLoad,,,0.9465451089103355,daily 144-point Pearson correlation,,,0.061274236097271784,30.0
+seven_day_correlation,NetLoad,,,0.9855063780706117,daily 144-point Pearson correlation,,,0.005216240857848583,24.0
+acf_normalized_daily_shape,PV_normalized,144.0,1.0,0.9616656005552595,PV divided by each day peak; 95% CI approx ±0.0293,,,,
+acf_normalized_daily_shape,PV_normalized,288.0,2.0,0.9279295994910194,PV divided by each day peak; 95% CI approx ±0.0293,,,,
+acf_normalized_daily_shape,PV_normalized,1008.0,7.0,0.7687815511710947,PV divided by each day peak; 95% CI approx ±0.0293,,,,
+adjacent_day_normalized_shape_correlation,PV_normalized,,,0.997173823184863,PV divided by each day peak,,,0.0015125047109461921,30.0
+seven_day_normalized_shape_correlation,PV_normalized,,,0.9968691173656449,PV divided by each day peak,,,0.0015897541915493687,24.0

@@ -51,16 +51,15 @@ def assert_input(df: pd.DataFrame) -> None:
 
 
 def make_periods(df: pd.DataFrame) -> pd.DataFrame:
-    """按模板左端点定义构造00:00--24:00日历日，并将0:00+1循环置首。"""
-    source = df.copy()
-    # 清洗表的0:00+1是次日0:00；在“每天重复”的标准日条件下，它等价于
-    # 代表日00:00--00:10这一时段的参数，必须参与一次且仅参与一次调度。
-    next_day = source["time_label"].astype(str).eq("0:00+1")
-    assert next_day.sum() == 1 and len(source) == N, "必须唯一定位0:00+1并保留144行"
-    result = pd.concat([source.loc[next_day], source.loc[~next_day]], ignore_index=True)
+    """保留附件1右端点原序，并构造对应的00:00--24:00日历区间。"""
+    result = df.copy().reset_index(drop=True)
+    # 附件1的时间标签是10分钟区间的右端点：00:10表示00:00--00:10，
+    # 0:00+1表示23:50--24:00。它们都是代表日的原始输入，不得循环移动。
+    next_day = result["time_label"].astype(str).eq("0:00+1")
+    assert next_day.sum() == 1 and len(result) == N, "必须唯一定位0:00+1并保留144行"
     result["source_time_index"] = result["time_index"].astype(int)
     result["calendar_time_index"] = np.arange(N, dtype=int)
-    # 下游一律以日历顺序time_index作图和求解，原始顺序另存为source_time_index。
+    # 原始行序本身就是日历顺序；下游以它求解、汇总、制图和报告。
     result["time_index"] = result["calendar_time_index"]
     base = pd.Timestamp("2025-01-01")
     result["period_start"] = base + pd.to_timedelta(result["calendar_time_index"] * 10, unit="min")
@@ -72,6 +71,7 @@ def make_periods(df: pd.DataFrame) -> pd.DataFrame:
     result["period_end_minute"] = result["period_start_minute"] + 10
     result["period_key"] = result["period_start_text"] + "-" + result["period_end_text"]
     assert result["period_key"].nunique() == N and result["source_time_index"].nunique() == N
+    assert result["source_time_index"].tolist() == list(range(N)), "建模输入不得循环移动"
     return result
 
 
@@ -300,7 +300,7 @@ def write_report(schedule: pd.DataFrame, blocks: pd.DataFrame, validation: dict,
 
 ## 2. 数据与假设
 
-使用`attachment1_standard_day.csv`的144条记录。原始宽表已转为长表，功率按$E=P/6$转换为10分钟区间电量；本模型直接使用既有`load_kwh`、`pv_forecast_kwh`，不重复换算。附件时间标签按照官方模板解释为区间左端点；为形成00:00–24:00日历日，将`0:00+1`循环移动到最前面并规范化为00:00–00:10。
+使用`attachment1_standard_day.csv`的144条记录。原始宽表已转为长表，功率按$E=P/6$转换为10分钟区间电量；本模型直接使用既有`load_kwh`、`pv_forecast_kwh`，不重复换算。附件1的时间标签是区间右端点：`00:10`对应00:00–00:10，…，`0:00+1`对应23:50–24:00。因此建模输入严格保留附件原序，未循环移动任何一行。
 
 假设外部电网可按电价无限购电、不能售电；多余光伏只能弃光。充电和放电的单程效率均取0.9；充电量$C_t$为输入储能设备侧的电量，放电量$D_t$为储能设备输出至微网的电量。初始储电量$S_0$未被题意指定，因此作为[1200,10800] kWh内的决策变量，并以$S_{{144}}=S_0$实现循环运行。
 
@@ -376,10 +376,12 @@ def main() -> None:
     raw_data = pd.read_csv(INPUT); assert_input(raw_data)
     data = make_periods(raw_data)
     x, stage1_cost, final_cost, message = solve_milp(data)
+    assert "Optimal" in message, f"MILP未返回Optimal状态：{message}"
     schedule = schedule_from_solution(data, x)
     x_fixed, _, fixed_cost, _ = solve_milp(data, fixed_s0=6000.0)
     blocks = four_hour_summary(schedule)
     validation = validate(schedule, stage1_cost, final_cost, fixed_cost)
+    validation["milp_solver_status"] = "Optimal"
     validation["four_hour_charge_sum_residual_kwh"] = float(abs(blocks.charge_kwh.sum() - schedule.charge_input_kwh.sum()))
     validation["four_hour_discharge_sum_residual_kwh"] = float(abs(blocks.discharge_kwh.sum() - schedule.discharge_output_kwh.sum()))
     assert validation["max_energy_balance_residual_kwh"] < 1e-6
