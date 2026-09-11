@@ -690,12 +690,7 @@ def summarize_strategy(daily: pd.DataFrame) -> dict:
 # ----------------------------------------------------------------------
 
 def _format_template_time(total_minutes: int) -> str:
-    """
-    Format a time boundary using the convention in the official result2 template.
-
-    time_index=0 represents 0:00-0:10 and time_index=143 represents
-    23:50-24:00.  Boundaries at/after 24:00 receive the '+1' suffix.
-    """
+    """Format a boundary exactly as used by the official result2 template."""
     day_offset, minute = divmod(int(total_minutes), 24 * 60)
     hour, minute = divmod(minute, 60)
     label = f"{hour}:{minute:02d}"
@@ -706,15 +701,14 @@ def _format_template_time(total_minutes: int) -> str:
 
 def compress_emergency(emergency: pd.DataFrame) -> pd.DataFrame:
     """
-    Merge consecutive 10-minute emergency-purchase slots into time periods.
+    Merge consecutive 10-minute emergency-purchase slots.
 
-    IMPORTANT:
-    Each time_index denotes the preceding 10-minute interval:
-        time_index 0   -> 0:00-0:10
+    IMPORTANT: follow the OFFICIAL result2_template.xlsx time convention.
+    Sheet 1 maps:
+        time_index 0   -> 0:10-0:20
         ...
-        time_index 143 -> 23:50-0:00+1
-
-    This is consistent with the source timestamps, where index 0 is labelled 00:10.
+        time_index 143 -> 0:00-0:10+1
+    Therefore Sheet 3 must use the same convention.
     """
     rows = []
     active = emergency.loc[emergency["emergency_purchase_kwh"] > 1e-8].copy()
@@ -736,9 +730,10 @@ def compress_emergency(emergency: pd.DataFrame) -> pd.DataFrame:
 
             a = idx[start]
             last = idx[j - 1]
-            # index t is the interval [t*10, (t+1)*10] minutes.
-            start_min = a * 10
-            end_min = (last + 1) * 10
+
+            # Exact mapping from the official template headers.
+            start_min = (a + 1) * 10
+            end_min = (last + 2) * 10
 
             rows.append({
                 "date": pd.Timestamp(date).normalize(),
@@ -815,6 +810,49 @@ def _validate_plan_sheet_dates(ws, dates: list[pd.Timestamp]) -> None:
             )
 
 
+def _write_emergency_sample(
+    ws,
+    compressed: pd.DataFrame,
+    date: pd.Timestamp,
+    rows: list[int],
+) -> None:
+    """Fill only the rows reserved by the official Sheet 3 template."""
+    group = (
+        compressed.loc[compressed["date"] == date]
+        .sort_values("start_index")
+        .reset_index(drop=True)
+    )
+
+    # Keep column A / borders / merged-looking layout untouched.
+    for r in rows:
+        ws.cell(r, 2).value = None
+        ws.cell(r, 3).value = None
+
+    if group.empty:
+        ws.cell(rows[0], 2).value = "无"
+        ws.cell(rows[0], 3).value = 0.0
+        return
+
+    capacity = len(rows)
+    if len(group) <= capacity:
+        for j, rec in group.iterrows():
+            ws.cell(rows[j], 2).value = str(rec["period"])
+            ws.cell(rows[j], 3).value = float(rec["emergency_kwh"])
+        return
+
+    # If a sample date has more periods than the fixed template can display,
+    # keep the first rows and combine the remaining non-contiguous periods in
+    # the last reserved row without losing any emergency energy.
+    for j in range(capacity - 1):
+        rec = group.iloc[j]
+        ws.cell(rows[j], 2).value = str(rec["period"])
+        ws.cell(rows[j], 3).value = float(rec["emergency_kwh"])
+
+    rest = group.iloc[capacity - 1:]
+    ws.cell(rows[-1], 2).value = "；".join(rest["period"].astype(str))
+    ws.cell(rows[-1], 3).value = float(rest["emergency_kwh"].sum())
+
+
 def write_result2(
     plan: pd.DataFrame,
     dispatch: pd.DataFrame,
@@ -822,25 +860,14 @@ def write_result2(
     dates: list[pd.Timestamp],
 ) -> Path:
     """
-    Fill the official result2 workbook.
+    Fill result2_template.xlsx STRICTLY IN PLACE.
 
-    Unlike the previous version, the ellipsis rows in Sheets 2 and 3 are treated
-    as compact examples, NOT as a request to omit the middle dates.
-
-    Sheet 1 — 计划购电量
-        The official template already contains all 334 dates. Fill the 144
-        10-minute planned purchases, daily total energy, and daily cost.
-
-    Sheet 2 — 充放电量
-        Expand the compact Feb-1 / Feb-2 / ... / Dec-31 example into all
-        334 dates. Each date receives six 4-hour blocks plus 0:00/24:00 SOC.
-
-    Sheet 3 — 紧急购电量
-        Expand to all 334 dates. Consecutive emergency slots are merged.
-        A day with no emergency purchase is written explicitly as "无", 0.
-
-    Output:
-        outputs/question2/result2_final.xlsx
+    The official workbook structure is preserved exactly:
+      Sheet 1: all 334 Feb-Dec dates already exist and are filled.
+      Sheet 2: only the template sample blocks 2025-02-01, 2025-02-02,
+               ellipsis, and 2025-12-31 are filled; no rows are inserted/deleted.
+      Sheet 3: only the template sample rows 2025-02-01, 2025-02-02,
+               ellipsis, and 2025-12-31 are filled; no rows are inserted/deleted.
     """
     template = find_template()
     wb = load_workbook(template)
@@ -859,6 +886,7 @@ def write_result2(
 
     # ==============================================================
     # Sheet 1 — 计划购电量
+    # Official template: 334 date rows, 144 interval columns + totals.
     # ==============================================================
     ws = wb["计划购电量"]
     _validate_plan_sheet_dates(ws, normalized_dates)
@@ -869,8 +897,6 @@ def write_result2(
             raise ValueError(f"{date.date()}: final plan does not have 144 slots.")
 
         values = day["grid_purchase_kwh"].to_numpy(float)
-
-        # B:EO = 144 interval purchases; EP = daily total; EQ = daily cost.
         for t, value in enumerate(values):
             ws.cell(r, 2 + t).value = float(value)
 
@@ -879,103 +905,59 @@ def write_result2(
 
     # ==============================================================
     # Sheet 2 — 充放电量
-    # Expand the compact example to every Feb-Dec date.
+    # Preserve the official compact sample layout exactly.
+    # Rows 2-7: Feb 1; rows 8-13: Feb 2; row 14: ellipsis;
+    # rows 15-20: Dec 31.
     # ==============================================================
     ws = wb["充放电量"]
-    if ws.max_column != 6 or ws.max_row < 7:
+    if ws.max_column != 6 or ws.max_row < 20:
         raise ValueError("Unexpected 充放电量 template structure.")
 
-    # Capture the six official row styles from the first sample block.
-    block_templates = [
-        _capture_row_template(ws, row, 6) for row in range(2, 8)
-    ]
+    sample_blocks = {
+        pd.Timestamp("2025-02-01"): list(range(2, 8)),
+        pd.Timestamp("2025-02-02"): list(range(8, 14)),
+        pd.Timestamp("2025-12-31"): list(range(15, 21)),
+    }
 
-    # Rebuild all data rows while preserving the original header.
-    if ws.max_row > 1:
-        ws.delete_rows(2, ws.max_row - 1)
-
-    periods = [
-        "0:00-4:00",
-        "4:00-8:00",
-        "8:00-12:00",
-        "12:00-16:00",
-        "16:00-20:00",
-        "20:00-24:00",
-    ]
-
-    out_row = 2
-    for date in normalized_dates:
+    for date, rows in sample_blocks.items():
         day = dispatch.loc[dispatch["date"] == date].sort_values("time_index")
         if len(day) != N:
             raise ValueError(f"{date.date()}: dispatch does not have 144 slots.")
 
-        for block in range(6):
-            r = out_row + block
-            _apply_row_template(ws, r, block_templates[block])
-
+        for block, r in enumerate(rows):
             part = day.iloc[24 * block: 24 * (block + 1)]
 
-            ws.cell(r, 1).value = (
-                date.to_pydatetime() if block == 0 else None
-            )
-            ws.cell(r, 2).value = periods[block]
+            # A/B/E are supplied by the official template; fill only results.
             ws.cell(r, 3).value = float(part["charge_kwh"].sum())
             ws.cell(r, 4).value = float(part["discharge_kwh"].sum())
 
+            # Clear F first, then fill only the two SOC cells reserved by template.
+            ws.cell(r, 6).value = None
             if block == 0:
-                ws.cell(r, 5).value = "0:00"
                 ws.cell(r, 6).value = float(day["soc_start_kwh"].iloc[0])
             elif block == 1:
-                ws.cell(r, 5).value = "24:00"
                 ws.cell(r, 6).value = float(day["soc_end_kwh"].iloc[-1])
-            else:
-                ws.cell(r, 5).value = None
-                ws.cell(r, 6).value = None
-
-        out_row += 6
 
     # ==============================================================
     # Sheet 3 — 紧急购电量
-    # Expand the compact example to every Feb-Dec date.
+    # Preserve the official compact sample layout exactly.
+    # Rows 2-4: Feb 1; rows 5-7: Feb 2; row 8: ellipsis;
+    # rows 9-11: Dec 31.
     # ==============================================================
     ws = wb["紧急购电量"]
-    if ws.max_column != 3 or ws.max_row < 2:
+    if ws.max_column != 3 or ws.max_row < 11:
         raise ValueError("Unexpected 紧急购电量 template structure.")
 
-    emergency_row_template = _capture_row_template(ws, 2, 3)
-
-    if ws.max_row > 1:
-        ws.delete_rows(2, ws.max_row - 1)
-
     compressed = compress_emergency(emergency)
-    out_row = 2
-
-    for date in normalized_dates:
-        if compressed.empty:
-            group = compressed
-        else:
-            group = (
-                compressed.loc[compressed["date"] == date]
-                .sort_values("start_index")
-                .reset_index(drop=True)
-            )
-
-        if group.empty:
-            _apply_row_template(ws, out_row, emergency_row_template)
-            ws.cell(out_row, 1).value = date.to_pydatetime()
-            ws.cell(out_row, 2).value = "无"
-            ws.cell(out_row, 3).value = 0.0
-            out_row += 1
-            continue
-
-        for j, rec in group.iterrows():
-            _apply_row_template(ws, out_row, emergency_row_template)
-            ws.cell(out_row, 1).value = (
-                date.to_pydatetime() if j == 0 else None
-            )
-            ws.cell(out_row, 2).value = str(rec["period"])
-            ws.cell(out_row, 3).value = float(rec["emergency_kwh"])
-            out_row += 1
+    _write_emergency_sample(
+        ws, compressed, pd.Timestamp("2025-02-01"), [2, 3, 4]
+    )
+    _write_emergency_sample(
+        ws, compressed, pd.Timestamp("2025-02-02"), [5, 6, 7]
+    )
+    _write_emergency_sample(
+        ws, compressed, pd.Timestamp("2025-12-31"), [9, 10, 11]
+    )
 
     output = OUT / "result2_final.xlsx"
     wb.save(output)
