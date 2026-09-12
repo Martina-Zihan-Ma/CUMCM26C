@@ -21,6 +21,8 @@ MAX_POWER_KW = 5000.0
 MAX_INTERVAL_ENERGY = MAX_POWER_KW / 6.0
 DEFAULT_SOC_STEP_KWH = 120.0
 THROUGHPUT_TIE_BREAK = 1e-9
+UP_ADJUSTMENT_MULTIPLIER = 1.5
+DOWN_CANCELLATION_PENALTY = 0.5
 
 
 @dataclass(frozen=True)
@@ -52,7 +54,7 @@ def settlement_cost(
     up = np.maximum(grid - base, 0.0)
     down = np.maximum(base - grid, 0.0)
     plan_cost = price * base
-    adjustment_cost = 1.5 * price * up - 0.5 * price * down
+    adjustment_cost = UP_ADJUSTMENT_MULTIPLIER * price * up - DOWN_CANCELLATION_PENALTY * price * down
     return plan_cost, up, down, adjustment_cost
 
 
@@ -127,7 +129,7 @@ def optimize_dispatch(
         else:
             up = np.maximum(grid - base[t], 0.0)
             down = np.maximum(base[t] - grid, 0.0)
-            stage = price[t] * base[t] + 1.5 * price[t] * up - 0.5 * price[t] * down
+            stage = price[t] * base[t] + UP_ADJUSTMENT_MULTIPLIER * price[t] * up - DOWN_CANCELLATION_PENALTY * price[t] * down
         stage = stage + THROUGHPUT_TIE_BREAK * (charge + discharge)
         total = dp[:, None] + np.where(feasible, stage, np.inf)
         parents[t] = np.argmin(total, axis=0)
@@ -159,7 +161,7 @@ def optimize_dispatch(
         plan_cost = np.where(finite, price * base, price * g)
         up = np.where(finite, np.maximum(g - base, 0.0), 0.0)
         down = np.where(finite, np.maximum(base - g, 0.0), 0.0)
-        adjustment = np.where(finite, 1.5 * price * up - 0.5 * price * down, 0.0)
+        adjustment = np.where(finite, UP_ADJUSTMENT_MULTIPLIER * price * up - DOWN_CANCELLATION_PENALTY * price * down, 0.0)
     return pd.DataFrame(
         {
             "load_forecast_kwh": load,
@@ -173,6 +175,7 @@ def optimize_dispatch(
             "soc_end_kwh": soc_end,
             "charge_state_binary": (c > 1e-8).astype(int),
             "base_plan_grid_kwh": g if base is None else base,
+            "adjustment_delta_kwh": up - down,
             "up_adjustment_kwh": up,
             "down_adjustment_kwh": down,
             "base_plan_cost_yuan": plan_cost,
@@ -193,6 +196,11 @@ def validate_planned_dispatch(schedule: pd.DataFrame, parameters: StorageParamet
         "planned_soc_bounds_ok": bool(schedule.soc_start_kwh.between(p.soc_min_kwh - 1e-7, p.soc_max_kwh + 1e-7).all() and schedule.soc_end_kwh.between(p.soc_min_kwh - 1e-7, p.soc_max_kwh + 1e-7).all()),
         "planned_power_bounds_ok": bool((schedule[["charge_input_kwh", "discharge_output_kwh"]] <= p.max_interval_energy_kwh + 1e-7).all().all()),
         "planned_simultaneous_charge_discharge_count": int(((schedule.charge_input_kwh > 1e-8) & (schedule.discharge_output_kwh > 1e-8)).sum()),
+        "planned_adjustment_up_down_simultaneous_count": int(((schedule.up_adjustment_kwh > 1e-8) & (schedule.down_adjustment_kwh > 1e-8)).sum()),
+        "planned_adjustment_identity_max_residual_kwh": float((
+            schedule.scheduled_grid_kwh - schedule.base_plan_grid_kwh
+            - schedule.up_adjustment_kwh + schedule.down_adjustment_kwh
+        ).abs().max()),
         "planned_grid_nonnegative_ok": bool((schedule.scheduled_grid_kwh >= -1e-9).all()),
         "planned_curtailment_nonnegative_ok": bool((schedule.planned_curtailment_kwh >= -1e-9).all()),
     }
