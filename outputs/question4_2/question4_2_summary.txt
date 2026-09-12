@@ -1,0 +1,49 @@
+Q4-2 DYNAMIC PRICE SUMMARY
+============================
+Price input:                    Attachment 4, date-specific 144-slot prices
+Forecast model:                 unchanged from Q2
+Scenario generation:            unchanged from Q2
+Safety scenario quantile:       0.80
+CVaR:                           NOT used
+Day-ahead decision:             planned grid purchase fixed at 0:00
+Final rolling horizon:          6 slots
+Checkpoint/resume:              enabled=True
+
+STEP 1 — dynamic_greedy
+-----------------------
+Total cost:                     14,643,151.33 yuan
+Planned purchase cost:          13,513,784.37 yuan
+Emergency cost:                 1,129,366.96 yuan
+Emergency energy:               189,117.37 kWh
+Emergency days:                 164 / 334
+Emergency intervals:            1361
+
+STEP 2 — dynamic_rolling (FINAL)
+---------------------------------------
+Total cost:                     14,630,773.88 yuan
+Planned purchase cost:          13,511,601.27 yuan
+Emergency cost:                 1,119,172.62 yuan
+Emergency energy:               190,067.40 kWh
+Emergency days:                 163 / 334
+Emergency intervals:            1568
+Rolling LP calls:               19984
+
+Step-2 vs Step-1 economic change
+--------------------------------
+Cost saving:                    12,377.45 yuan
+Cost saving rate:               0.085%
+
+Final battery / feasibility
+---------------------------
+Jan-1 initial SOC:              6,000.00 kWh
+Feb-1 initial SOC:              1,812.76 kWh
+Shared Feb-1 SOC:               1,812.76 kWh
+Both strategies same initial SOC: True
+Terminal SOC range:             1,200.00 to 6,158.30 kWh
+SOC continuity error:           0.000e+00 kWh
+Balance error:                  1.705e-12 kWh
+Max emergency * charge:         0.000e+00
+
+Official workbook
+-----------------
+/Users/mazihan/Documents/GitHub/CUMCM26C/results/result4-2.xlsx

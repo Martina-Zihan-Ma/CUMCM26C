@@ -181,7 +181,10 @@ def build_load_features(load: pd.DataFrame) -> pd.DataFrame:
     }
 
     pieces = [
-    x.stack(dropna=False).rename(name)
+    # pandas >= 2.1 no longer permits ``dropna`` with the new stack
+    # implementation.  The new implementation preserves the required index
+    # structure, while the complete load series keeps all target rows present.
+    x.stack(future_stack=True).rename(name)
     for name, x in feature_wide.items()]
     table = pd.concat(pieces, axis=1).reset_index()
     table.columns = ["date", "time_index"] + list(feature_wide)

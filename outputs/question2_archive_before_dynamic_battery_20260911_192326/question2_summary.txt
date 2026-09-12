@@ -1,0 +1,40 @@
+Q2 FINAL SUMMARY
+================
+Reserve quantile:              0.85
+Service quantile:              0.85
+Intraday risk control:         service quantile + expected 5x emergency cost
+Interday risk control:         dynamic terminal SOC reserve
+
+Final strategy
+--------------
+Total purchase cost:           14,587,923.27 yuan
+Planned purchase cost:         13,621,600.32 yuan
+Emergency purchase cost:       966,322.96 yuan
+Emergency purchase energy:     254,061.44 kWh
+Emergency days:                328 / 334
+Emergency intervals:           8416
+Spill energy:                  3,310,985.13 kWh
+
+No-storage baseline
+-------------------
+Total purchase cost:           18,940,040.16 yuan
+Emergency purchase cost:       2,554,965.66 yuan
+
+Economic improvement
+--------------------
+Cost saving:                   4,352,116.89 yuan
+Cost saving rate:              22.98%
+
+Battery / feasibility
+---------------------
+Jan-1 initial SOC:             6,000.00 kWh
+Feb-1 initial SOC:             4,053.54 kWh
+Terminal SOC range:            3,188.42 to 10,685.15 kWh
+Days exactly on reserve:       334 / 334
+SOC continuity error:          0.000e+00 kWh
+Balance error:                 2.274e-13 kWh
+Simultaneous C/D count:        0
+
+Output workbook
+---------------
+/Users/mazihan/Documents/GitHub/CUMCM26C/outputs/question2/result2_final.xlsx

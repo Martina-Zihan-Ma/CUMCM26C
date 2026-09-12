@@ -1,0 +1,14 @@
+﻿series,metric,value
+load,profile_corr_lag_1,0.9428343296873277
+load,profile_corr_lag_7,0.9822464101406236
+load,profile_corr_lag_14,0.9836361616332538
+load,profile_corr_lag_21,0.982330537580656
+pv,profile_corr_lag_1,0.997173823184863
+pv,profile_corr_lag_7,0.9968691173656449
+load,weekday_mean_Friday,485514.87242
+load,weekday_mean_Monday,759023.499425
+load,weekday_mean_Saturday,488013.070225
+load,weekday_mean_Sunday,760184.011
+load,weekday_mean_Thursday,760677.53036
+load,weekday_mean_Tuesday,759425.564375
+load,weekday_mean_Wednesday,759661.2344600001

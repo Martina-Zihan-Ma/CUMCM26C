@@ -1,0 +1,37 @@
+Q2 RESULT VALIDATION
+====================
+[PASS] 附件1恰为144行
+[PASS] 附件1 time_index 为0--143
+[PASS] 附件2恰为52560行
+[PASS] 附件2完整覆盖2025年
+[PASS] 附件2每日144个完整且不重复时段
+[PASS] 附件2无重复日期-时段
+[PASS] 附件2负载和光伏非负
+[PASS] 电价非负
+[PASS] 负载功率仅乘DT一次
+[PASS] 光伏功率仅乘DT一次
+[PASS] 预测输出覆盖Jan-2至Dec-31完整144时段
+[PASS] 全部预测严格满足 history_end_date < target date
+[PASS] 预测功率非负
+[PASS] 负载残差定义一致
+[PASS] 光伏残差定义一致
+[PASS] 计划购电覆盖334日×144时段
+[PASS] 充放电调度覆盖334日×144时段
+[PASS] 紧急购电结算覆盖334日×144时段
+[PASS] 计划购电量非负
+[PASS] 充放电量非负
+[PASS] 充放电共享功率上限满足
+[PASS] SOC上下界满足
+[PASS] SOC逐时段转移满足
+[PASS] 跨日SOC连续
+[PASS] 实际紧急购电结算公式满足
+[PASS] 实际弃电结算公式满足
+[PASS] 紧急购电按5倍电价结算
+[PASS] 每日总费用为计划费用加实际紧急费用
+[PASS] 结果工作簿工作表结构正确
+[PASS] Sheet1保留334天×144列模板结构
+[PASS] Sheet2已展开为334天六时段
+[PASS] Sheet3已逐日写入紧急购电记录
+[PASS] Sheet1首日购电量与CSV逐时段一致
+
+Checks: 33; failures: 0

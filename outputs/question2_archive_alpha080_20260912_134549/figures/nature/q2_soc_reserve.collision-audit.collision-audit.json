@@ -1,0 +1,99 @@
+{
+  "pdf": "outputs/question2/figures/nature/q2_soc_reserve.collision-audit.pdf",
+  "auditable": true,
+  "verdict": "FIX BEFORE DELIVERY",
+  "page_count": 1,
+  "visible_text_box_count": 19,
+  "text_trace_count": 19,
+  "stroke_path_count": 23,
+  "filled_region_count": 16,
+  "image_region_count": 0,
+  "summary": {
+    "fail": 3,
+    "warn": 0,
+    "contained_fill_overlays": 3,
+    "contained_image_overlays": 0
+  },
+  "thresholds": {
+    "text_inset_pt": 0.6,
+    "min_overlap_ratio": 0.05,
+    "clipping_tolerance_pt": 0.5
+  },
+  "findings": [
+    {
+      "severity": "FAIL",
+      "kind": "text-stroke",
+      "page": 1,
+      "message": "Text is crossed by 1 stroked path(s)",
+      "text": "Dynamic terminal reserve",
+      "text_bbox": [
+        71.71562194824219,
+        25.619224548339844,
+        151.06170654296875,
+        32.619224548339844
+      ],
+      "other_text": null,
+      "other_bbox": [
+        43.71562957763672,
+        26.563446044921875,
+        492.9380187988281,
+        123.61724853515625
+      ],
+      "object_count": 1,
+      "object_indexes": [
+        25
+      ]
+    },
+    {
+      "severity": "FAIL",
+      "kind": "text-stroke",
+      "page": 1,
+      "message": "Text is crossed by 4 stroked path(s)",
+      "text": "End-of-day SOC",
+      "text_bbox": [
+        181.1906280517578,
+        25.619224548339844,
+        232.54380798339844,
+        32.619224548339844
+      ],
+      "other_text": null,
+      "other_bbox": [
+        43.71562576293945,
+        25.619232177734375,
+        492.9380187988281,
+        123.61725616455078
+      ],
+      "object_count": 4,
+      "object_indexes": [
+        15,
+        16,
+        24,
+        25
+      ]
+    },
+    {
+      "severity": "FAIL",
+      "kind": "text-stroke",
+      "page": 1,
+      "message": "Text is crossed by 1 stroked path(s)",
+      "text": "SOC lower bound",
+      "text_bbox": [
+        262.6656188964844,
+        25.619224548339844,
+        317.91070556640625,
+        32.619224548339844
+      ],
+      "other_text": null,
+      "other_bbox": [
+        43.71562957763672,
+        26.563446044921875,
+        492.9380187988281,
+        123.61724853515625
+      ],
+      "object_count": 1,
+      "object_indexes": [
+        25
+      ]
+    }
+  ]
+}

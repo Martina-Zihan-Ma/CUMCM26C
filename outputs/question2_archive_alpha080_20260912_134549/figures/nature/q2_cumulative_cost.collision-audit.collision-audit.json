@@ -1,0 +1,49 @@
+{
+  "pdf": "outputs/question2/figures/nature/q2_cumulative_cost.collision-audit.pdf",
+  "auditable": true,
+  "verdict": "FIX BEFORE DELIVERY",
+  "page_count": 1,
+  "visible_text_box_count": 24,
+  "text_trace_count": 24,
+  "stroke_path_count": 26,
+  "filled_region_count": 20,
+  "image_region_count": 0,
+  "summary": {
+    "fail": 1,
+    "warn": 0,
+    "contained_fill_overlays": 2,
+    "contained_image_overlays": 0
+  },
+  "thresholds": {
+    "text_inset_pt": 0.6,
+    "min_overlap_ratio": 0.05,
+    "clipping_tolerance_pt": 0.5
+  },
+  "findings": [
+    {
+      "severity": "FAIL",
+      "kind": "text-stroke",
+      "page": 1,
+      "message": "Text is crossed by 2 stroked path(s)",
+      "text": "Annual saving",
+      "text_bbox": [
+        352.5144348144531,
+        87.28814697265625,
+        396.4825134277344,
+        94.28814697265625
+      ],
+      "other_text": null,
+      "other_bbox": [
+        40.89168167114258,
+        57.620445251464844,
+        490.11407470703125,
+        154.3724822998047
+      ],
+      "object_count": 2,
+      "object_indexes": [
+        20,
+        27
+      ]
+    }
+  ]
+}

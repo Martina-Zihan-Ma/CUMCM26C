@@ -1,0 +1,4 @@
+Figure contract: full 334-day deterministic operational simulation; no observations excluded.
+Panel a: cumulative realised cost, optimized storage versus the specified same-forecast no-storage settlement.
+Panel b: end-of-day SOC versus dynamic terminal reserve; SOC is checked for every day.
+No statistical intervals: these are deterministic full-period accounting outputs, not sampled replicates.

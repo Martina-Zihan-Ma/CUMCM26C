@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#263238"/></marker>
+    <marker id="arrowGold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#9A7B3F"/></marker>
+    <marker id="arrowRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#B44948"/></marker>
+    <style>
+      .zh{font-family:Arial,'Noto Sans CJK SC','PingFang SC',sans-serif}.title{font-size:28px;font-weight:700;fill:#1F2937}.sub{font-size:15px;fill:#4B5563}.heading{font-size:21px;font-weight:700}.body{font-size:15px}.flow{font-size:15px;fill:#263238}.small{font-size:14px;fill:#475569}.card{stroke-width:2}.edge{fill:none;stroke:#263238;stroke-width:2.5;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1600" height="900" fill="#fff"/>
+  <text x="800" y="66" class="zh title" text-anchor="middle">微网多源供能与负载用能流程</text>
+  <text x="800" y="105" class="zh sub" text-anchor="middle">物理能量流视角：多类电源经微网母线协同满足小区用能需求</text>
+  <rect x="585" y="160" width="460" height="575" rx="16" fill="none" stroke="#94A3B8" stroke-width="2" stroke-dasharray="10 7"/>
+  <text x="610" y="195" class="zh" font-size="18" font-weight="700" fill="#475569">小区微网系统</text>
+  <g class="zh" text-anchor="middle">
+    <rect x="100" y="220" width="285" height="95" rx="14" fill="#E8F2F5" stroke="#58727D" class="card"/>
+    <text x="242" y="260" class="heading" fill="#243B46">外部电网</text><text x="242" y="290" class="body" fill="#243B46">常规购电</text>
+    <rect x="100" y="390" width="285" height="95" rx="14" fill="#E8F2F5" stroke="#58727D" class="card"/>
+    <text x="242" y="430" class="heading" fill="#243B46">光伏发电</text><text x="242" y="460" class="body" fill="#243B46">本地清洁电源</text>
+    <rect x="100" y="560" width="285" height="95" rx="14" fill="#F1D7D4" stroke="#B44948" stroke-width="3"/>
+    <text x="242" y="600" class="heading" fill="#772F2D">应急购电</text><text x="242" y="630" class="body" fill="#772F2D">供能不足时启用</text>
+    <rect x="670" y="350" width="290" height="140" rx="14" fill="#EAF0F6" stroke="#63758A" class="card"/>
+    <text x="815" y="407" class="heading" fill="#334155">微网能量母线</text><text x="815" y="440" class="body" fill="#334155">汇集、分配与平衡</text>
+    <rect x="690" y="625" width="250" height="92" rx="14" fill="#F4EEDC" stroke="#9A7B3F" class="card"/>
+    <text x="815" y="663" font-size="19" font-weight="700" fill="#624C1B">电池储能系统</text><text x="815" y="692" class="body" fill="#624C1B">削峰填谷 · 缓冲调节</text>
+    <rect x="1210" y="355" width="290" height="130" rx="14" fill="#E5F1E3" stroke="#5A8A55" stroke-width="3"/>
+    <text x="1355" y="407" font-size="23" font-weight="700" fill="#315B31">小区负载</text><text x="1355" y="441" font-size="16" fill="#315B31">用能需求 / 最终用途</text>
+  </g>
+  <path d="M385 268 H535 V378 H670" class="edge"/><text x="465" y="254" class="zh flow" text-anchor="middle">计划购电</text>
+  <path d="M385 438 H670" class="edge"/><text x="527" y="424" class="zh flow" text-anchor="middle">光伏电能</text>
+  <path d="M385 608 H535 V462 H670" fill="none" stroke="#B44948" stroke-width="2.5" stroke-dasharray="8 6" marker-end="url(#arrowRed)"/><text x="495" y="592" class="zh" font-size="15" fill="#9F3B3A" text-anchor="middle">备用补电</text>
+  <path d="M960 420 H1210" class="edge" stroke-width="3"/><text x="1085" y="406" class="zh" font-size="16" fill="#263238" text-anchor="middle">供电</text>
+  <path d="M780 490 V625" fill="none" stroke="#9A7B3F" stroke-width="2.3" marker-end="url(#arrowGold)"/><text x="757" y="565" class="zh" font-size="14" fill="#7A6225" text-anchor="end">充电</text>
+  <path d="M850 625 V490" fill="none" stroke="#9A7B3F" stroke-width="2.3" marker-end="url(#arrowGold)"/><text x="874" y="565" class="zh" font-size="14" fill="#7A6225">放电</text>
+  <rect x="100" y="770" width="870" height="68" rx="10" fill="#fff" stroke="#CBD5E1" stroke-width="1.5"/>
+  <text x="125" y="812" class="zh" font-size="15" fill="#475569"><tspan font-weight="700">图例：</tspan>实线 = 常规能量流　　虚线 = 应急/备用供能　　双向连接 = 储能充放电调节</text>
+  <text x="1500" y="812" class="zh small" text-anchor="end">注：各问在此基础上分别确定计划、预测、滚动调度或应急决策。</text>
+</svg>

@@ -1,0 +1,37 @@
+Q2 FORECAST VISUALIZATION REPORT
+================================
+Actual input: /Users/mazihan/Documents/GitHub/CUMCM26C/data/processed/attachment2_actual_long.csv
+Forecast input: /Users/mazihan/Documents/GitHub/CUMCM26C/outputs/question2/dynamic_forecasts.csv
+Aggregate metrics input: /Users/mazihan/Documents/GitHub/CUMCM26C/outputs/question2/forecast_metrics.csv
+Actual fields used: date, time_label, time_index, load_kw, pv_actual_kw.
+Forecast fields used: date, time_label, time_index, actual_load_kw, actual_pv_kw, forecast_load_kw, forecast_pv_kw, history_end_date.
+Actual dimensions/date range: 52560 rows; 2025-01-01 to 2025-12-31.
+Formal forecast dimensions/date range: 48096 rows; 2025-02-01 to 2025-12-31.
+Periodicity window: 2025-01-01 to 2025-01-31; correlations are means of Pearson correlations between exactly lagged 144-point daily curves.
+Load correlations: lag1=0.942834, lag7=0.982246.
+PV correlations: lag1=0.997174, lag7=0.996869.
+Representative date: 2025-03-09.
+Selection: rank daily load-RMSE and PV-RMSE across all 334 formal days; average the two percentile ranks; exclude actual-PV daily sums below their 25th percentile; select the eligible score nearest 0.50.
+Representative errors: load MAE=118.816805 kW, RMSE=148.187278 kW (RMSE percentile=0.371); PV MAE=134.657717 kW, RMSE=284.651257 kW (RMSE percentile=0.626).
+Representative combined percentile score=0.498503; PV eligibility threshold=296851.200600 kW-sum.
+Outputs: /Users/mazihan/Documents/GitHub/CUMCM26C/outputs/question2/figures/q2_periodicity.png, /Users/mazihan/Documents/GitHub/CUMCM26C/outputs/question2/figures/q2_periodicity.pdf, /Users/mazihan/Documents/GitHub/CUMCM26C/outputs/question2/figures/q2_forecast_vs_actual.png, /Users/mazihan/Documents/GitHub/CUMCM26C/outputs/question2/figures/q2_forecast_vs_actual.pdf.
+Data/field issues: none found. The stored final right-endpoint label is 00:00:00 rather than 0:00+1; it is validated and displayed as the 24:00 boundary, with no circular shift.
+
+Validation checks:
+PASS: Required input exists: /Users/mazihan/Documents/GitHub/CUMCM26C/data/processed/attachment2_actual_long.csv
+PASS: Required input exists: /Users/mazihan/Documents/GitHub/CUMCM26C/outputs/question2/dynamic_forecasts.csv
+PASS: Required input exists: /Users/mazihan/Documents/GitHub/CUMCM26C/outputs/question2/forecast_metrics.csv
+PASS: Actual-data fields are present
+PASS: Forecast-data fields are present
+PASS: Actual data cover 2025-01-01 to 2025-12-31
+PASS: Actual data have 365 x 144 complete slots
+PASS: Actual date + time_index has no duplicates
+PASS: Actual load and PV are finite and non-negative
+PASS: Formal forecast dates cover 2025-02-01 to 2025-12-31
+PASS: Formal forecast has 334 x 144 complete slots
+PASS: Formal forecast date + time_index has no duplicates
+PASS: Forecast load and PV are finite and non-negative
+PASS: history_end_date is strictly before each target date
+PASS: Actual/forecast date-time mappings are identical
+PASS: time_index maps to right endpoints 00:10 through 24:00 without shift
+PASS: Aggregate metric fields are present

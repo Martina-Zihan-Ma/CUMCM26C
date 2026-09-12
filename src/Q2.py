@@ -80,7 +80,7 @@ RNG_SEED = 20260911
 # Scenario safety rule.
 # The sampled scenario at this quantile of daily positive net-demand energy
 # must be feasible with zero emergency purchase.
-SAFETY_QUANTILE = 0.80
+SAFETY_QUANTILE = 0.90
 
 
 # Tiny penalties only break degenerate LP solutions.

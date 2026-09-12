@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import shutil
 import re
+import sys
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -22,6 +23,11 @@ import pandas as pd
 from openpyxl import load_workbook
 from scipy.optimize import Bounds, LinearConstraint, milp
 from scipy.sparse import lil_matrix
+
+
+SKILL_SCRIPTS = Path("/Users/mazihan/.codex/skills/nature-figure/scripts")
+sys.path.insert(0, str(SKILL_SCRIPTS))
+from audit_panel_alignment import require_matplotlib_panel_alignment
 
 
 INPUT = ROOT / "data" / "processed" / "attachment1_standard_day.csv"
@@ -183,9 +189,15 @@ def four_hour_summary(schedule: pd.DataFrame) -> pd.DataFrame:
 
 
 def set_chinese_font() -> None:
-    # 使用本机存在的中文字体文件，避免名称未注册时回退到无中文字形的DejaVu。
+    """Set a compact, publication-oriented style with a Chinese-capable fallback."""
     from matplotlib import font_manager
     font_path = Path("/System/Library/Fonts/STHeiti Medium.ttc")
+    plt.rcParams.update({
+        "font.family": "sans-serif", "font.sans-serif": ["Arial", "DejaVu Sans", "Liberation Sans"],
+        "font.size": 7, "svg.fonttype": "none", "pdf.fonttype": 42,
+        "axes.linewidth": .8, "axes.spines.top": False, "axes.spines.right": False,
+        "legend.frameon": False, "xtick.major.width": .7, "ytick.major.width": .7,
+    })
     if font_path.exists():
         font_manager.fontManager.addfont(str(font_path))
         plt.rcParams["font.family"] = font_manager.FontProperties(fname=str(font_path)).get_name()
@@ -194,23 +206,94 @@ def set_chinese_font() -> None:
     plt.rcParams["axes.unicode_minus"] = False
 
 
+TICKS = np.arange(0, 25, 4)
+TICK_LABELS = [f"{int(t):02d}:00" for t in TICKS]
+COLORS = {
+    "load": "#194F8A", "pv": "#D7832F", "grid": "#39856D", "soc": "#28689A",
+    "charge": "#4E9E9B", "discharge": "#C65B57", "price": "#8A6875",
+    "gridline": "#D9D9D9", "text": "#3C3C3C",
+}
+
+
+def style_time_axis(ax: plt.Axes) -> None:
+    ax.set_xlim(0, 24)
+    ax.set_xticks(TICKS, TICK_LABELS)
+    ax.grid(axis="y", color=COLORS["gridline"], linewidth=.55)
+    ax.set_axisbelow(True)
+
+
+def panel_label(ax: plt.Axes, label: str) -> None:
+    ax.text(-.085, 1.025, label, transform=ax.transAxes, fontsize=8,
+            fontweight="bold", va="bottom", ha="left", clip_on=False)
+
+
+def save_figure(fig: plt.Figure, stem: str) -> None:
+    """Export editable/vector and high-resolution figure assets with layout QA."""
+    fig.canvas.draw()
+    require_matplotlib_panel_alignment(
+        fig, json_out=FIG / f"{stem}.alignment.json", overlay_svg=FIG / f"{stem}.alignment.svg",
+        tolerance_pt=1.5, gutter_tolerance_pt=1.5, require_panel_labels=True, strict=True,
+    )
+    fig.savefig(FIG / f"{stem}.png", dpi=600, bbox_inches="tight")
+    fig.savefig(FIG / f"{stem}.svg", bbox_inches="tight")
+    fig.savefig(FIG / f"{stem}.pdf", bbox_inches="tight")
+    fig.savefig(FIG / f"{stem}.tiff", dpi=600, bbox_inches="tight")
+    plt.close(fig)
+
+
 def draw_figures(schedule: pd.DataFrame) -> None:
+    """Render complementary evidence panels; all 144 input intervals are retained."""
     set_chinese_font(); FIG.mkdir(parents=True, exist_ok=True)
     hour = schedule["period_end_minute"] / 60
-    fig, ax = plt.subplots(figsize=(13, 6))
-    ax.plot(hour, schedule["load_kw"], label="小区负载", lw=1.8)
-    ax.plot(hour, schedule["pv_forecast_kw"], label="光伏预测功率", lw=1.8)
-    ax.plot(hour, schedule["grid_purchase_kwh"] * 6, label="计划购电功率（等效）", lw=1.6)
-    ax.set(xlabel="日历时刻 / h", ylabel="功率 / kW", title="问题一：标准日负载、光伏与计划购电")
-    ax.set_xlim(0, 24); ax.grid(alpha=.25); ax.legend(ncol=3); fig.tight_layout()
-    fig.savefig(FIG / "question1_dispatch.png", dpi=300); plt.close(fig)
-    fig, ax = plt.subplots(figsize=(13, 5))
-    ax.step(np.r_[0, hour], np.r_[schedule["soc_start_kwh"].iloc[0], schedule["soc_end_kwh"]], where="post", label="储电量")
-    ax.axhline(SOC_MIN, c="#c44e52", ls="--", label="下限1200")
-    ax.axhline(SOC_MAX, c="#55a868", ls="--", label="上限10800")
-    ax.set(xlabel="时刻 / h", ylabel="储电量 / kWh", title="问题一：储能SOC轨迹")
-    ax.set_xlim(0, 24); ax.grid(alpha=.25); ax.legend(ncol=3); fig.tight_layout()
-    fig.savefig(FIG / "question1_soc.png", dpi=300); plt.close(fig)
+    grid_kw = schedule["grid_purchase_kwh"].to_numpy(float) * 6
+    price = schedule["price_yuan_per_kwh"].to_numpy(float)
+    charge_kw = schedule["charge_input_kwh"].to_numpy(float) * 6
+    discharge_kw = schedule["discharge_output_kwh"].to_numpy(float) * 6
+
+    fig, axes = plt.subplots(2, 1, figsize=(7.09, 4.55), sharex=True, constrained_layout=True)
+    ax = axes[0]
+    ax.fill_between(hour, 0, schedule["pv_forecast_kw"], color=COLORS["pv"], alpha=.16, linewidth=0)
+    ax.plot(hour, schedule["load_kw"], color=COLORS["load"], lw=1.25, label="小区负载")
+    ax.plot(hour, schedule["pv_forecast_kw"], color=COLORS["pv"], lw=1.25, label="光伏预测")
+    style_time_axis(ax); ax.set_ylabel("功率 / kW")
+    ax.set_title("供需曲线", loc="left", fontsize=7.7, fontweight="bold", pad=7); panel_label(ax, "a")
+    ax.legend(loc="upper left", ncol=2, fontsize=6.2, handlelength=2.0, columnspacing=1.2)
+
+    ax = axes[1]
+    ax.fill_between(hour, 0, grid_kw, color=COLORS["grid"], alpha=.18, linewidth=0)
+    ax.plot(hour, grid_kw, color=COLORS["grid"], lw=1.15, label="计划购电功率（等效）")
+    style_time_axis(ax); ax.set_ylabel("购电功率 / kW"); ax.set_xlabel("日历时刻")
+    ax.set_title("调度响应与分时电价", loc="left", fontsize=7.7, fontweight="bold", pad=7); panel_label(ax, "b")
+    price_ax = ax.twinx()
+    price_ax.plot(hour, price, color=COLORS["price"], lw=.9, ls="--", label="电价")
+    price_ax.set_ylabel("电价 / 元·kWh-1", color=COLORS["price"])
+    price_ax.tick_params(axis="y", colors=COLORS["price"], width=.7); price_ax.spines["top"].set_visible(False)
+    lines, labels = ax.get_legend_handles_labels(); lines2, labels2 = price_ax.get_legend_handles_labels()
+    ax.legend(lines + lines2, labels + labels2, loc="upper left", ncol=2, fontsize=6.2, handlelength=2.0, columnspacing=1.2)
+    save_figure(fig, "question1_dispatch")
+
+    soc_path = np.r_[schedule["soc_start_kwh"].iloc[0], schedule["soc_end_kwh"].to_numpy(float)]
+    fig, axes = plt.subplots(2, 1, figsize=(7.09, 4.55), sharex=True, constrained_layout=True,
+                             gridspec_kw={"height_ratios": [1.35, 1]})
+    ax = axes[0]
+    ax.fill_between(np.r_[0, hour], SOC_MIN, SOC_MAX, color="#EAF1F5", zorder=0)
+    ax.step(np.r_[0, hour], soc_path, where="post", color=COLORS["soc"], lw=1.35, label="储电量")
+    ax.axhline(SOC_MIN, color=COLORS["discharge"], ls="--", lw=.85)
+    ax.axhline(SOC_MAX, color=COLORS["charge"], ls="--", lw=.85)
+    ax.text(23.85, SOC_MIN + 160, "下限 1,200", ha="right", va="bottom", fontsize=5.8, color=COLORS["discharge"])
+    ax.text(23.85, SOC_MAX - 160, "上限 10,800", ha="right", va="top", fontsize=5.8, color=COLORS["charge"])
+    style_time_axis(ax); ax.set_ylim(0, 12000); ax.set_ylabel("储电量 / kWh")
+    ax.set_title("SOC 轨迹与运行边界（S0 = S144）", loc="left", fontsize=7.7, fontweight="bold", pad=7); panel_label(ax, "a")
+
+    ax = axes[1]
+    width = 10 / 60 * .86
+    ax.bar(hour, charge_kw, width=width, color=COLORS["charge"], alpha=.88, label="充电")
+    ax.bar(hour, -discharge_kw, width=width, color=COLORS["discharge"], alpha=.88, label="放电")
+    ax.axhline(0, color="#555555", lw=.75)
+    style_time_axis(ax); ax.set_ylabel("电池功率 / kW"); ax.set_xlabel("日历时刻")
+    ax.set_title("充放电动作（充电为正，放电为负）", loc="left", fontsize=7.7, fontweight="bold", pad=7); panel_label(ax, "b")
+    ax.legend(loc="upper left", ncol=2, fontsize=6.2, handlelength=1.2, columnspacing=1.2)
+    save_figure(fig, "question1_soc")
 
 
 def template_period_key(label: str) -> str:
